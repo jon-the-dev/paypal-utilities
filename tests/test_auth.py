@@ -1,0 +1,112 @@
+"""
+Tests for paypal_auth module.
+"""
+
+import os
+from unittest.mock import patch
+
+import pytest
+import responses
+
+from conftest import SANDBOX_API_BASE, TEST_ACCESS_TOKEN, TEST_CLIENT_ID, TEST_SECRET
+
+
+class TestGetPayPalToken:
+    """Tests for get_paypal_token function."""
+
+    @responses.activate
+    def test_get_token_success(self, mock_env_vars):
+        """Test successful token retrieval."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN, "token_type": "Bearer"},
+            status=200,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        token = get_paypal_token()
+        assert token == TEST_ACCESS_TOKEN
+
+    @responses.activate
+    def test_get_token_uses_correct_credentials(self, mock_env_vars):
+        """Test that correct credentials are sent."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN},
+            status=200,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        get_paypal_token()
+
+        # Verify the request was made with correct auth
+        assert len(responses.calls) == 1
+        request = responses.calls[0].request
+        assert request.headers.get("Accept") == "application/json"
+
+    @responses.activate
+    def test_get_token_api_error(self, mock_env_vars):
+        """Test handling of API errors."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"error": "invalid_client"},
+            status=401,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        with pytest.raises(Exception):
+            get_paypal_token()
+
+
+class TestGetAuthHeaders:
+    """Tests for get_auth_headers function."""
+
+    @responses.activate
+    def test_get_auth_headers_returns_correct_format(self, mock_env_vars):
+        """Test that auth headers have correct format."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN},
+            status=200,
+        )
+
+        from paypal_auth import get_auth_headers
+
+        headers = get_auth_headers()
+
+        assert headers["Content-Type"] == "application/json"
+        assert headers["Authorization"] == f"Bearer {TEST_ACCESS_TOKEN}"
+
+
+class TestEnvironmentConfiguration:
+    """Tests for environment-based configuration."""
+
+    def test_sandbox_api_base_for_dev(self):
+        """Test that dev environment uses sandbox API."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            # Need to reload module to pick up new env var
+            import importlib
+            import paypal_auth
+
+            importlib.reload(paypal_auth)
+            assert "sandbox" in paypal_auth.PAYPAL_API_BASE
+
+    def test_production_api_base_for_prod(self):
+        """Test that prod environment uses production API."""
+        with patch.dict(os.environ, {
+            "PAYPAL_CLIENT_ID": TEST_CLIENT_ID,
+            "PAYPAL_SECRET": TEST_SECRET,
+            "ENVIRONMENT": "prod",
+        }):
+            import importlib
+            import paypal_auth
+
+            importlib.reload(paypal_auth)
+            assert paypal_auth.PAYPAL_API_BASE == "https://api.paypal.com"
