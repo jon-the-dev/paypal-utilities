@@ -13,6 +13,7 @@ import requests
 CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
 ENV = os.getenv("ENVIRONMENT", "dev")
+TIMEOUT = int(os.getenv("PAYPAL_TIMEOUT", "30"))
 
 if ENV == "prod":
     PAYPAL_API_BASE = "https://api.paypal.com"
@@ -41,6 +42,7 @@ def get_paypal_token():
         headers=headers,
         auth=(CLIENT_ID, PAYPAL_SECRET),
         data={"grant_type": "client_credentials"},
+        timeout=TIMEOUT,
     )
     response.raise_for_status()
     return response.json()["access_token"]

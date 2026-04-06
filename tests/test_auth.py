@@ -110,3 +110,45 @@ class TestEnvironmentConfiguration:
 
             importlib.reload(paypal_auth)
             assert paypal_auth.PAYPAL_API_BASE == "https://api.paypal.com"
+
+
+class TestTimeout:
+    """Tests for request timeout configuration."""
+
+    def test_default_timeout(self, mock_env_vars):
+        """Test that TIMEOUT defaults to 30 seconds."""
+        from paypal_auth import TIMEOUT
+
+        assert TIMEOUT == 30
+
+    def test_timeout_from_env(self):
+        """Test that TIMEOUT reads from PAYPAL_TIMEOUT env var."""
+        with patch.dict(os.environ, {
+            "PAYPAL_CLIENT_ID": TEST_CLIENT_ID,
+            "PAYPAL_SECRET": TEST_SECRET,
+            "ENVIRONMENT": "dev",
+            "PAYPAL_TIMEOUT": "60",
+        }):
+            import importlib
+            import paypal_auth
+
+            importlib.reload(paypal_auth)
+            assert paypal_auth.TIMEOUT == 60
+
+    @responses.activate
+    def test_token_request_uses_timeout(self, mock_env_vars):
+        """Test that get_paypal_token passes timeout to requests."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN},
+            status=200,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        get_paypal_token()
+
+        assert len(responses.calls) == 1
+        request = responses.calls[0].request
+        assert request.req_kwargs.get("timeout") == 30
