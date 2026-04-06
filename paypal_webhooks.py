@@ -7,14 +7,14 @@ CLI utility for managing PayPal webhooks.
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, get_auth_headers
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers
 
 
 def list_webhooks():
     """List current PayPal webhooks."""
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks"
     headers = get_auth_headers()
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=TIMEOUT)
 
     if response.status_code == 200:
         webhooks = response.json().get("webhooks", [])
@@ -48,7 +48,7 @@ def create_webhook(url, event_types):
         "url": url,
         "event_types": [{"name": event_name} for event_name in event_types],
     }
-    response = requests.post(webhook_url, headers=headers, json=payload)
+    response = requests.post(webhook_url, headers=headers, json=payload, timeout=TIMEOUT)
 
     if response.status_code in [200, 201]:
         click.echo("Webhook created successfully.")
@@ -70,7 +70,7 @@ def delete_webhook(webhook_id):
     """
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks/{webhook_id}"
     headers = get_auth_headers()
-    response = requests.delete(url, headers=headers)
+    response = requests.delete(url, headers=headers, timeout=TIMEOUT)
 
     if response.status_code in [200, 204]:
         click.echo(f"Webhook {webhook_id} deleted successfully.")
@@ -84,7 +84,7 @@ def get_webhook_event_types():
     """List all available PayPal webhook event types."""
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks-event-types"
     headers = get_auth_headers()
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=TIMEOUT)
 
     if response.status_code == 200:
         event_types = response.json().get("event_types", [])
