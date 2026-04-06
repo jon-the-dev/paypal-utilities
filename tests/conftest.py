@@ -32,6 +32,8 @@ def mock_env_vars():
         # Reload paypal_auth to pick up mocked environment variables
         import paypal_auth
         importlib.reload(paypal_auth)
+        # Clear cached token so each test starts from a clean state
+        paypal_auth.clear_token_cache()
         yield
 
 
