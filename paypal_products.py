@@ -7,6 +7,7 @@ Useful for merchants who want to manage their storefront products.
 
 import csv
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import click
@@ -296,12 +297,15 @@ def export_to_csv(filepath):
         click.echo("No products to export.")
         return 0
 
-    # Fetch full details for each product
+    # Fetch full details in parallel to avoid N+1 API calls
+    product_ids = [p.get("id") for p in products if p.get("id")]
     detailed_products = []
-    for product in products:
-        details = get_product(product.get("id"))
-        if details:
-            detailed_products.append(details)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(get_product, pid): pid for pid in product_ids}
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                detailed_products.append(result)
 
     fieldnames = ["id", "name", "description", "type", "category", "image_url", "home_url", "create_time", "update_time"]
 
