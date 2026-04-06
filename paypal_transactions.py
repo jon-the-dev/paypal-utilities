@@ -45,17 +45,14 @@ def get_transactions(start_date, end_date, transaction_status=None, page_size=10
 
     while params["page"] <= total_pages:
         response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response.raise_for_status()
 
-        if response.status_code == 200:
-            data = response.json()
-            transactions = data.get("transaction_details", [])
-            all_transactions.extend(transactions)
+        data = response.json()
+        transactions = data.get("transaction_details", [])
+        all_transactions.extend(transactions)
 
-            total_pages = data.get("total_pages", 1)
-            params["page"] += 1
-        else:
-            click.echo(f"Failed to fetch transactions: {response.status_code} - {response.text}")
-            break
+        total_pages = data.get("total_pages", 1)
+        params["page"] += 1
 
     return all_transactions
 
@@ -122,7 +119,11 @@ def cmd_list(start, end, days, status, limit):
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 
-    transactions = get_transactions(start_str, end_str, status)
+    try:
+        transactions = get_transactions(start_str, end_str, status)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not transactions:
         click.echo("No transactions found.")
@@ -161,7 +162,12 @@ def cmd_export(start, end, days, status, output):
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 
-    transactions = get_transactions(start_str, end_str, status)
+    try:
+        transactions = get_transactions(start_str, end_str, status)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
+
     export_to_csv(transactions, output)
 
 
@@ -186,7 +192,11 @@ def cmd_summary(start, end, days):
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 
-    transactions = get_transactions(start_str, end_str)
+    try:
+        transactions = get_transactions(start_str, end_str)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not transactions:
         click.echo("No transactions found.")

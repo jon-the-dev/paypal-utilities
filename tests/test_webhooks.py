@@ -3,6 +3,7 @@ Tests for paypal_webhooks module.
 """
 
 import pytest
+import requests
 import responses
 from click.testing import CliRunner
 
@@ -68,7 +69,7 @@ class TestListWebhooks:
 
     @responses.activate
     def test_list_webhooks_api_error(self, mock_env_vars, mock_auth):
-        """Test handling of API errors."""
+        """Test that API errors raise HTTPError."""
         responses.add(
             responses.GET,
             f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
@@ -78,8 +79,8 @@ class TestListWebhooks:
 
         from paypal_webhooks import list_webhooks
 
-        webhooks = list_webhooks()
-        assert webhooks == []
+        with pytest.raises(requests.exceptions.HTTPError):
+            list_webhooks()
 
 
 class TestCreateWebhook:
@@ -129,7 +130,7 @@ class TestCreateWebhook:
 
     @responses.activate
     def test_create_webhook_failure(self, mock_env_vars, mock_auth):
-        """Test webhook creation failure."""
+        """Test that webhook creation failure raises HTTPError."""
         responses.add(
             responses.POST,
             f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
@@ -139,8 +140,8 @@ class TestCreateWebhook:
 
         from paypal_webhooks import create_webhook
 
-        result = create_webhook("invalid-url", ["PAYMENT.SALE.COMPLETED"])
-        assert result is None
+        with pytest.raises(requests.exceptions.HTTPError):
+            create_webhook("invalid-url", ["PAYMENT.SALE.COMPLETED"])
 
 
 class TestDeleteWebhook:
@@ -162,7 +163,7 @@ class TestDeleteWebhook:
 
     @responses.activate
     def test_delete_webhook_not_found(self, mock_env_vars, mock_auth):
-        """Test deleting non-existent webhook."""
+        """Test that deleting non-existent webhook raises HTTPError."""
         responses.add(
             responses.DELETE,
             f"{SANDBOX_API_BASE}/v1/notifications/webhooks/WH-INVALID",
@@ -172,8 +173,8 @@ class TestDeleteWebhook:
 
         from paypal_webhooks import delete_webhook
 
-        result = delete_webhook("WH-INVALID")
-        assert result is False
+        with pytest.raises(requests.exceptions.HTTPError):
+            delete_webhook("WH-INVALID")
 
 
 class TestGetWebhookEventTypes:
@@ -230,3 +231,33 @@ class TestWebhooksCLI:
         result = cli_runner.invoke(cli, ["events"])
         assert result.exit_code == 0
         assert "PAYMENT.SALE.COMPLETED" in result.output
+
+    @responses.activate
+    def test_cli_list_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI list command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(cli, ["list"])
+        assert "Error" in result.output
+
+    @responses.activate
+    def test_cli_delete_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI delete command shows error output on API failure."""
+        responses.add(
+            responses.DELETE,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks/WH-INVALID",
+            json={"error": "not_found"},
+            status=404,
+        )
+
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(cli, ["delete", "WH-INVALID"])
+        assert "Error" in result.output

@@ -85,7 +85,7 @@ def create_product(name, description=None, product_type="SERVICE", category=None
         home_url (str): URL to product page
 
     Returns:
-        dict: Created product or None on failure
+        dict: Created product data
     """
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products"
     headers = get_auth_headers()
@@ -105,12 +105,8 @@ def create_product(name, description=None, product_type="SERVICE", category=None
         payload["home_url"] = home_url
 
     response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
-
-    if response.status_code in [200, 201]:
-        return response.json()
-    else:
-        click.echo(f"Failed to create product '{name}': {response.status_code} - {response.text}")
-        return None
+    response.raise_for_status()
+    return response.json()
 
 
 def list_products(page_size=20):
@@ -131,20 +127,17 @@ def list_products(page_size=20):
 
     while url:
         response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response.raise_for_status()
 
-        if response.status_code == 200:
-            data = response.json()
-            products = data.get("products", [])
-            all_products.extend(products)
+        data = response.json()
+        products = data.get("products", [])
+        all_products.extend(products)
 
-            # Check for next page
-            links = data.get("links", [])
-            next_link = next((link for link in links if link.get("rel") == "next"), None)
-            url = next_link.get("href") if next_link else None
-            params = {}  # Clear params for subsequent requests
-        else:
-            click.echo(f"Failed to list products: {response.status_code} - {response.text}")
-            break
+        # Check for next page
+        links = data.get("links", [])
+        next_link = next((link for link in links if link.get("rel") == "next"), None)
+        url = next_link.get("href") if next_link else None
+        params = {}  # Clear params for subsequent requests
 
     return all_products
 
@@ -157,18 +150,14 @@ def get_product(product_id):
         product_id (str): The product ID
 
     Returns:
-        dict: Product details or None
+        dict: Product details
     """
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
     response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
-
-    if response.status_code == 200:
-        return response.json()
-    else:
-        click.echo(f"Failed to get product: {response.status_code} - {response.text}")
-        return None
+    response.raise_for_status()
+    return response.json()
 
 
 def update_product(product_id, updates):
@@ -180,18 +169,14 @@ def update_product(product_id, updates):
         updates (list): List of patch operations
 
     Returns:
-        bool: Success status
+        bool: True on success
     """
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
     response = requests.patch(url, headers=headers, json=updates, timeout=TIMEOUT, verify=True)
-
-    if response.status_code in [200, 204]:
-        return True
-    else:
-        click.echo(f"Failed to update product: {response.status_code} - {response.text}")
-        return False
+    response.raise_for_status()
+    return True
 
 
 def import_from_csv(filepath, update_existing=False):
@@ -254,27 +239,28 @@ def import_from_csv(filepath, update_existing=False):
                     patches.append({"op": "replace", "path": "/home_url", "value": home_url})
 
                 if patches:
-                    if update_product(existing_id, patches):
+                    try:
+                        update_product(existing_id, patches)
                         click.echo(f"Updated: {name}")
                         updated += 1
-                    else:
+                    except requests.exceptions.RequestException:
                         failed += 1
                 else:
                     click.echo(f"No updates for: {name}")
             else:
                 # Create new product
-                result = create_product(
-                    name=name,
-                    description=description,
-                    product_type=product_type,
-                    category=category,
-                    image_url=image_url,
-                    home_url=home_url,
-                )
-                if result:
+                try:
+                    result = create_product(
+                        name=name,
+                        description=description,
+                        product_type=product_type,
+                        category=category,
+                        image_url=image_url,
+                        home_url=home_url,
+                    )
                     click.echo(f"Created: {name} (ID: {result.get('id')})")
                     created += 1
-                else:
+                except requests.exceptions.RequestException:
                     failed += 1
 
     return created, updated, failed
@@ -336,7 +322,11 @@ def cli():
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def cmd_list(limit, as_json):
     """List all products in the catalog."""
-    products = list_products()
+    try:
+        products = list_products()
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not products:
         click.echo("No products found.")
@@ -356,9 +346,10 @@ def cmd_list(limit, as_json):
 @click.argument("product_id")
 def cmd_show(product_id):
     """Show details for a specific product."""
-    product = get_product(product_id)
-
-    if not product:
+    try:
+        product = get_product(product_id)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
         return
 
     click.echo(f"\nProduct: {product.get('name')}")
@@ -382,19 +373,22 @@ def cmd_show(product_id):
 @click.option("--home-url", help="URL to product page")
 def cmd_create(name, description, product_type, category, image_url, home_url):
     """Create a new product."""
-    result = create_product(
-        name=name,
-        description=description,
-        product_type=product_type,
-        category=category.upper() if category else None,
-        image_url=image_url,
-        home_url=home_url,
-    )
+    try:
+        result = create_product(
+            name=name,
+            description=description,
+            product_type=product_type,
+            category=category.upper() if category else None,
+            image_url=image_url,
+            home_url=home_url,
+        )
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
-    if result:
-        click.echo(f"Product created successfully!")
-        click.echo(f"  ID: {result.get('id')}")
-        click.echo(f"  Name: {result.get('name')}")
+    click.echo(f"Product created successfully!")
+    click.echo(f"  ID: {result.get('id')}")
+    click.echo(f"  Name: {result.get('name')}")
 
 
 @cli.command("update")
@@ -420,8 +414,13 @@ def cmd_update(product_id, description, category, image_url, home_url):
         click.echo("No updates specified. Use --description, --category, --image-url, or --home-url")
         return
 
-    if update_product(product_id, patches):
-        click.echo(f"Product {product_id} updated successfully!")
+    try:
+        update_product(product_id, patches)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
+
+    click.echo(f"Product {product_id} updated successfully!")
 
 
 @cli.command("import")
@@ -435,7 +434,11 @@ def cmd_import(csv_file, update_existing):
     """
     click.echo(f"Importing products from {csv_file}...")
 
-    created, updated, failed = import_from_csv(csv_file, update_existing)
+    try:
+        created, updated, failed = import_from_csv(csv_file, update_existing)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     click.echo(f"\nImport complete:")
     click.echo(f"  Created: {created}")
@@ -449,7 +452,12 @@ def cmd_export(output):
     """Export all products to a CSV file."""
     click.echo(f"Exporting products to {output}...")
 
-    count = export_to_csv(output)
+    try:
+        count = export_to_csv(output)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
+
     click.echo(f"Exported {count} products.")
 
 

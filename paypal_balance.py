@@ -30,12 +30,8 @@ def get_balances(as_of_date=None):
         params["as_of_time"] = as_of_date
 
     response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
-
-    if response.status_code == 200:
-        return response.json().get("balances", [])
-    else:
-        click.echo(f"Failed to fetch balances: {response.status_code} - {response.text}")
-        return []
+    response.raise_for_status()
+    return response.json().get("balances", [])
 
 
 @click.group()
@@ -56,7 +52,11 @@ def cmd_show(currency, date):
     else:
         click.echo(f"Current Balance ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC):")
 
-    balances = get_balances(as_of_date)
+    try:
+        balances = get_balances(as_of_date)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not balances:
         click.echo("No balance information available.")
@@ -87,7 +87,11 @@ def cmd_show(currency, date):
 @cli.command("summary")
 def cmd_summary():
     """Show a quick balance summary."""
-    balances = get_balances()
+    try:
+        balances = get_balances()
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not balances:
         click.echo("No balance information available.")

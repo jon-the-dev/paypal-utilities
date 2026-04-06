@@ -15,23 +15,21 @@ def list_webhooks():
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks"
     headers = get_auth_headers()
     response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response.raise_for_status()
 
-    if response.status_code == 200:
-        webhooks = response.json().get("webhooks", [])
-        if not webhooks:
-            click.echo("No webhooks configured.")
-            return []
-        click.echo("Current webhooks:")
-        for webhook in webhooks:
-            click.echo(f"\n  ID: {webhook['id']}")
-            click.echo(f"  URL: {webhook['url']}")
-            click.echo("  Event Types:")
-            for eventtype in webhook.get("event_types", []):
-                click.echo(f"    - {eventtype['name']}")
-        return webhooks
-    else:
-        click.echo(f"Failed to list webhooks: {response.status_code} - {response.text}")
+    webhooks = response.json().get("webhooks", [])
+    if not webhooks:
+        click.echo("No webhooks configured.")
         return []
+
+    click.echo("Current webhooks:")
+    for webhook in webhooks:
+        click.echo(f"\n  ID: {webhook['id']}")
+        click.echo(f"  URL: {webhook['url']}")
+        click.echo("  Event Types:")
+        for eventtype in webhook.get("event_types", []):
+            click.echo(f"    - {eventtype['name']}")
+    return webhooks
 
 
 def create_webhook(url, event_types):
@@ -49,16 +47,13 @@ def create_webhook(url, event_types):
         "event_types": [{"name": event_name} for event_name in event_types],
     }
     response = requests.post(webhook_url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
+    response.raise_for_status()
 
-    if response.status_code in [200, 201]:
-        click.echo("Webhook created successfully.")
-        webhook = response.json()
-        click.echo(f"  ID: {webhook['id']}")
-        click.echo(f"  URL: {webhook['url']}")
-        return webhook
-    else:
-        click.echo(f"Failed to create webhook: {response.status_code} - {response.text}")
-        return None
+    click.echo("Webhook created successfully.")
+    webhook = response.json()
+    click.echo(f"  ID: {webhook['id']}")
+    click.echo(f"  URL: {webhook['url']}")
+    return webhook
 
 
 def delete_webhook(webhook_id):
@@ -71,13 +66,10 @@ def delete_webhook(webhook_id):
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks/{webhook_id}"
     headers = get_auth_headers()
     response = requests.delete(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response.raise_for_status()
 
-    if response.status_code in [200, 204]:
-        click.echo(f"Webhook {webhook_id} deleted successfully.")
-        return True
-    else:
-        click.echo(f"Failed to delete webhook: {response.status_code} - {response.text}")
-        return False
+    click.echo(f"Webhook {webhook_id} deleted successfully.")
+    return True
 
 
 def get_webhook_event_types():
@@ -85,13 +77,10 @@ def get_webhook_event_types():
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks-event-types"
     headers = get_auth_headers()
     response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response.raise_for_status()
 
-    if response.status_code == 200:
-        event_types = response.json().get("event_types", [])
-        return [et["name"] for et in event_types]
-    else:
-        click.echo(f"Failed to list event types: {response.status_code}")
-        return []
+    event_types = response.json().get("event_types", [])
+    return [et["name"] for et in event_types]
 
 
 @click.group()
@@ -103,7 +92,10 @@ def cli():
 @cli.command("list")
 def cmd_list():
     """List all configured webhooks."""
-    list_webhooks()
+    try:
+        list_webhooks()
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
 
 
 @cli.command("create")
@@ -112,35 +104,44 @@ def cmd_list():
 @click.option("--all-events", is_flag=True, help="Subscribe to all available event types")
 def cmd_create(url, events, all_events):
     """Create a new webhook."""
-    if all_events:
-        event_types = get_webhook_event_types()
-        if not event_types:
-            click.echo("Could not retrieve event types.")
+    try:
+        if all_events:
+            event_types = get_webhook_event_types()
+            if not event_types:
+                click.echo("Could not retrieve event types.")
+                return
+        elif events:
+            event_types = list(events)
+        else:
+            click.echo("Error: Specify --events or --all-events")
             return
-    elif events:
-        event_types = list(events)
-    else:
-        click.echo("Error: Specify --events or --all-events")
-        return
 
-    create_webhook(url, event_types)
+        create_webhook(url, event_types)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
 
 
 @cli.command("delete")
 @click.argument("webhook_id")
 def cmd_delete(webhook_id):
     """Delete a webhook by ID."""
-    delete_webhook(webhook_id)
+    try:
+        delete_webhook(webhook_id)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
 
 
 @cli.command("events")
 def cmd_events():
     """List all available webhook event types."""
-    event_types = get_webhook_event_types()
-    if event_types:
-        click.echo("Available webhook event types:")
-        for et in event_types:
-            click.echo(f"  - {et}")
+    try:
+        event_types = get_webhook_event_types()
+        if event_types:
+            click.echo("Available webhook event types:")
+            for et in event_types:
+                click.echo(f"  - {et}")
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
 
 
 if __name__ == "__main__":
