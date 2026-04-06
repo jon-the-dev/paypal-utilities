@@ -3,6 +3,7 @@ Tests for paypal_auth module.
 """
 
 import os
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -62,6 +63,86 @@ class TestGetPayPalToken:
 
         with pytest.raises(Exception):
             get_paypal_token()
+
+
+class TestTokenCaching:
+    """Tests for OAuth token caching behaviour."""
+
+    @responses.activate
+    def test_token_caching_returns_cached_token(self, mock_env_vars):
+        """Two consecutive calls should only result in one HTTP request."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN, "token_type": "Bearer", "expires_in": 32400},
+            status=200,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        first = get_paypal_token()
+        second = get_paypal_token()
+
+        assert first == TEST_ACCESS_TOKEN
+        assert second == TEST_ACCESS_TOKEN
+        assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_token_cache_expires(self, mock_env_vars):
+        """An expired cache entry must trigger a new HTTP request."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN, "token_type": "Bearer", "expires_in": 32400},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": "refreshed_token_99999", "token_type": "Bearer", "expires_in": 32400},
+            status=200,
+        )
+
+        import paypal_auth
+
+        # Prime the cache with a token that is already past its expiry buffer
+        paypal_auth._token_cache["token"] = "old_token"
+        paypal_auth._token_cache["expires_at"] = datetime.utcnow() - timedelta(seconds=1)
+
+        token = paypal_auth.get_paypal_token()
+
+        assert token == TEST_ACCESS_TOKEN
+        assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_clear_token_cache(self, mock_env_vars):
+        """clear_token_cache() should force a fresh fetch on the next call."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN, "token_type": "Bearer", "expires_in": 32400},
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": "fresh_token_after_clear", "token_type": "Bearer", "expires_in": 32400},
+            status=200,
+        )
+
+        import paypal_auth
+
+        first = paypal_auth.get_paypal_token()
+        assert first == TEST_ACCESS_TOKEN
+        assert len(responses.calls) == 1
+
+        paypal_auth.clear_token_cache()
+        assert paypal_auth._token_cache["token"] is None
+        assert paypal_auth._token_cache["expires_at"] is None
+
+        second = paypal_auth.get_paypal_token()
+        assert second == "fresh_token_after_clear"
+        assert len(responses.calls) == 2
 
 
 class TestGetAuthHeaders:
