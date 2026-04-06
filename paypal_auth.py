@@ -73,6 +73,7 @@ def get_paypal_token() -> str:
             auth=(CLIENT_ID, PAYPAL_SECRET),
             data={"grant_type": "client_credentials"},
             timeout=TIMEOUT,
+            verify=True,
         )
         response.raise_for_status()
         payload = response.json()

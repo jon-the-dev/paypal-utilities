@@ -233,3 +233,25 @@ class TestTimeout:
         assert len(responses.calls) == 1
         request = responses.calls[0].request
         assert request.req_kwargs.get("timeout") == 30
+
+
+class TestSSLVerification:
+    """Tests for explicit SSL certificate verification."""
+
+    @responses.activate
+    def test_token_request_uses_verify_true(self, mock_env_vars):
+        """Test that get_paypal_token passes verify=True to requests."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN},
+            status=200,
+        )
+
+        from paypal_auth import get_paypal_token
+
+        get_paypal_token()
+
+        assert len(responses.calls) == 1
+        request = responses.calls[0].request
+        assert request.req_kwargs.get("verify") is True
