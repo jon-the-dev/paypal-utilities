@@ -3,6 +3,7 @@ Tests for paypal_disputes module.
 """
 
 import pytest
+import requests
 import responses
 from click.testing import CliRunner
 
@@ -132,6 +133,21 @@ class TestGetDisputes:
         disputes = get_disputes()
         assert disputes == []
 
+    @responses.activate
+    def test_get_disputes_api_error(self, mock_env_vars, mock_auth):
+        """Test that API errors raise HTTPError."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/customer/disputes",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_disputes import get_disputes
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            get_disputes()
+
 
 class TestGetDisputeDetails:
     """Tests for get_dispute_details function."""
@@ -156,7 +172,7 @@ class TestGetDisputeDetails:
 
     @responses.activate
     def test_get_dispute_details_not_found(self, mock_env_vars, mock_auth):
-        """Test getting non-existent dispute."""
+        """Test that getting non-existent dispute raises HTTPError."""
         responses.add(
             responses.GET,
             f"{SANDBOX_API_BASE}/v1/customer/disputes/PP-D-INVALID",
@@ -166,8 +182,8 @@ class TestGetDisputeDetails:
 
         from paypal_disputes import get_dispute_details
 
-        dispute = get_dispute_details("PP-D-INVALID")
-        assert dispute is None
+        with pytest.raises(requests.exceptions.HTTPError):
+            get_dispute_details("PP-D-INVALID")
 
 
 class TestFormatDispute:
@@ -289,3 +305,33 @@ class TestDisputesCLI:
         result = cli_runner.invoke(cli, ["list"])
         assert result.exit_code == 0
         assert "No disputes found" in result.output
+
+    @responses.activate
+    def test_cli_list_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI list command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/customer/disputes",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_disputes import cli
+
+        result = cli_runner.invoke(cli, ["list"])
+        assert "Error" in result.output
+
+    @responses.activate
+    def test_cli_show_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI show command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/customer/disputes/PP-D-INVALID",
+            json={"error": "not_found"},
+            status=404,
+        )
+
+        from paypal_disputes import cli
+
+        result = cli_runner.invoke(cli, ["show", "PP-D-INVALID"])
+        assert "Error" in result.output

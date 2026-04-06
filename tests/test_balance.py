@@ -3,6 +3,7 @@ Tests for paypal_balance module.
 """
 
 import pytest
+import requests
 import responses
 from click.testing import CliRunner
 
@@ -115,7 +116,7 @@ class TestGetBalances:
 
     @responses.activate
     def test_get_balances_api_error(self, mock_env_vars, mock_auth):
-        """Test handling of API errors."""
+        """Test that API errors raise HTTPError."""
         responses.add(
             responses.GET,
             f"{SANDBOX_API_BASE}/v1/reporting/balances",
@@ -125,8 +126,8 @@ class TestGetBalances:
 
         from paypal_balance import get_balances
 
-        balances = get_balances()
-        assert balances == []
+        with pytest.raises(requests.exceptions.HTTPError):
+            get_balances()
 
 
 class TestBalanceCLI:
@@ -221,3 +222,33 @@ class TestBalanceCLI:
         result = cli_runner.invoke(cli, ["show"])
         assert result.exit_code == 0
         assert "No balance" in result.output
+
+    @responses.activate
+    def test_cli_show_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI show command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/reporting/balances",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_balance import cli
+
+        result = cli_runner.invoke(cli, ["show"])
+        assert "Error" in result.output
+
+    @responses.activate
+    def test_cli_summary_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI summary command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/reporting/balances",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_balance import cli
+
+        result = cli_runner.invoke(cli, ["summary"])
+        assert "Error" in result.output

@@ -8,6 +8,7 @@ import tempfile
 from datetime import datetime, timedelta
 
 import pytest
+import requests
 import responses
 from click.testing import CliRunner
 
@@ -131,6 +132,21 @@ class TestGetTransactions:
         )
 
         assert transactions == []
+
+    @responses.activate
+    def test_get_transactions_api_error(self, mock_env_vars, mock_auth):
+        """Test that API errors raise HTTPError."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/reporting/transactions",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_transactions import get_transactions
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            get_transactions("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z")
 
 
 class TestFormatTransaction:
@@ -279,3 +295,18 @@ class TestTransactionsCLI:
             ])
             assert result.exit_code == 0
             assert os.path.exists("test_export.csv")
+
+    @responses.activate
+    def test_cli_list_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI list command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/reporting/transactions",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_transactions import cli
+
+        result = cli_runner.invoke(cli, ["list", "--days", "7"])
+        assert "Error" in result.output

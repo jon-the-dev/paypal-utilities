@@ -52,20 +52,17 @@ def get_disputes(start_date=None, dispute_state=None, page_size=20):
 
     while url:
         response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response.raise_for_status()
 
-        if response.status_code == 200:
-            data = response.json()
-            disputes = data.get("items", [])
-            all_disputes.extend(disputes)
+        data = response.json()
+        disputes = data.get("items", [])
+        all_disputes.extend(disputes)
 
-            # Check for next page
-            links = data.get("links", [])
-            next_link = next((l for l in links if l.get("rel") == "next"), None)
-            url = next_link.get("href") if next_link else None
-            params = {}  # Clear params for next page (URL includes them)
-        else:
-            click.echo(f"Failed to fetch disputes: {response.status_code} - {response.text}")
-            break
+        # Check for next page
+        links = data.get("links", [])
+        next_link = next((l for l in links if l.get("rel") == "next"), None)
+        url = next_link.get("href") if next_link else None
+        params = {}  # Clear params for next page (URL includes them)
 
     return all_disputes
 
@@ -84,12 +81,8 @@ def get_dispute_details(dispute_id):
     headers = get_auth_headers()
 
     response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
-
-    if response.status_code == 200:
-        return response.json()
-    else:
-        click.echo(f"Failed to fetch dispute details: {response.status_code} - {response.text}")
-        return None
+    response.raise_for_status()
+    return response.json()
 
 
 def format_dispute(dispute):
@@ -121,7 +114,11 @@ def cmd_list(status, days, limit):
 
     click.echo(f"Fetching disputes from the last {days} days...")
 
-    disputes = get_disputes(start_date, status)
+    try:
+        disputes = get_disputes(start_date, status)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not disputes:
         click.echo("No disputes found.")
@@ -153,9 +150,10 @@ def cmd_list(status, days, limit):
 @click.argument("dispute_id")
 def cmd_show(dispute_id):
     """Show details for a specific dispute."""
-    dispute = get_dispute_details(dispute_id)
-
-    if not dispute:
+    try:
+        dispute = get_dispute_details(dispute_id)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
         return
 
     amount = dispute.get("dispute_amount", {})
@@ -181,7 +179,6 @@ def cmd_show(dispute_id):
     if txn_info:
         click.echo(f"\nDisputed Transactions:")
         for txn in txn_info:
-            seller = txn.get("seller", {})
             click.echo(f"  Transaction ID: {txn.get('seller_transaction_id', 'N/A')}")
             click.echo(f"  Buyer:          {txn.get('buyer', {}).get('name', 'N/A')}")
 
@@ -196,7 +193,11 @@ def cmd_summary(days):
     """Show dispute summary."""
     start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
 
-    disputes = get_disputes(start_date)
+    try:
+        disputes = get_disputes(start_date)
+    except requests.exceptions.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        return
 
     if not disputes:
         click.echo("No disputes found.")

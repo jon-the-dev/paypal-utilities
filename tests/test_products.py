@@ -7,6 +7,7 @@ import os
 import tempfile
 
 import pytest
+import requests
 import responses
 from click.testing import CliRunner
 
@@ -110,7 +111,7 @@ class TestCreateProduct:
 
     @responses.activate
     def test_create_product_failure(self, mock_env_vars, mock_auth):
-        """Test product creation failure."""
+        """Test that product creation failure raises HTTPError."""
         responses.add(
             responses.POST,
             f"{SANDBOX_API_BASE}/v1/catalogs/products",
@@ -120,8 +121,8 @@ class TestCreateProduct:
 
         from paypal_products import create_product
 
-        result = create_product(name="")
-        assert result is None
+        with pytest.raises(requests.exceptions.HTTPError):
+            create_product(name="")
 
 
 class TestListProducts:
@@ -209,7 +210,7 @@ class TestGetProduct:
 
     @responses.activate
     def test_get_product_not_found(self, mock_env_vars, mock_auth):
-        """Test getting non-existent product."""
+        """Test that getting non-existent product raises HTTPError."""
         responses.add(
             responses.GET,
             f"{SANDBOX_API_BASE}/v1/catalogs/products/PROD-INVALID",
@@ -219,8 +220,8 @@ class TestGetProduct:
 
         from paypal_products import get_product
 
-        product = get_product("PROD-INVALID")
-        assert product is None
+        with pytest.raises(requests.exceptions.HTTPError):
+            get_product("PROD-INVALID")
 
 
 class TestUpdateProduct:
@@ -245,7 +246,7 @@ class TestUpdateProduct:
 
     @responses.activate
     def test_update_product_failure(self, mock_env_vars, mock_auth):
-        """Test product update failure."""
+        """Test that product update failure raises HTTPError."""
         responses.add(
             responses.PATCH,
             f"{SANDBOX_API_BASE}/v1/catalogs/products/PROD-INVALID",
@@ -255,8 +256,8 @@ class TestUpdateProduct:
 
         from paypal_products import update_product
 
-        result = update_product("PROD-INVALID", [])
-        assert result is False
+        with pytest.raises(requests.exceptions.HTTPError):
+            update_product("PROD-INVALID", [])
 
 
 class TestCSVImport:
@@ -431,3 +432,33 @@ class TestProductsCLI:
         assert result.exit_code == 0
         assert "SOFTWARE" in result.output
         assert "PHYSICAL_GOODS" in result.output
+
+    @responses.activate
+    def test_cli_list_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI list command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/catalogs/products",
+            json={"error": "unauthorized"},
+            status=401,
+        )
+
+        from paypal_products import cli
+
+        result = cli_runner.invoke(cli, ["list"])
+        assert "Error" in result.output
+
+    @responses.activate
+    def test_cli_show_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
+        """Test CLI show command shows error output on API failure."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/catalogs/products/PROD-INVALID",
+            json={"error": "not_found"},
+            status=404,
+        )
+
+        from paypal_products import cli
+
+        result = cli_runner.invoke(cli, ["show", "PROD-INVALID"])
+        assert "Error" in result.output
