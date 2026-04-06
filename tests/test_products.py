@@ -369,6 +369,29 @@ class TestCSVExport:
                 os.unlink(output_path)
 
 
+    @responses.activate
+    def test_export_to_csv_empty(self, mock_env_vars, mock_auth):
+        """Test export when no products exist."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/catalogs/products",
+            json={"products": [], "links": []},
+            status=200,
+        )
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            output_path = f.name
+
+        try:
+            from paypal_products import export_to_csv
+
+            count = export_to_csv(output_path)
+            assert count == 0
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+
 class TestProductsCLI:
     """Tests for products CLI commands."""
 
