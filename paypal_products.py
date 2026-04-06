@@ -104,7 +104,7 @@ def create_product(name, description=None, product_type="SERVICE", category=None
     if home_url:
         payload["home_url"] = home_url
 
-    response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT)
+    response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
 
     if response.status_code in [200, 201]:
         return response.json()
@@ -130,7 +130,7 @@ def list_products(page_size=20):
     all_products = []
 
     while url:
-        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT)
+        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
 
         if response.status_code == 200:
             data = response.json()
@@ -162,7 +162,7 @@ def get_product(product_id):
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
-    response = requests.get(url, headers=headers, timeout=TIMEOUT)
+    response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
 
     if response.status_code == 200:
         return response.json()
@@ -185,7 +185,7 @@ def update_product(product_id, updates):
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
-    response = requests.patch(url, headers=headers, json=updates, timeout=TIMEOUT)
+    response = requests.patch(url, headers=headers, json=updates, timeout=TIMEOUT, verify=True)
 
     if response.status_code in [200, 204]:
         return True

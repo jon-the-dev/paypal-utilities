@@ -44,7 +44,7 @@ def get_transactions(start_date, end_date, transaction_status=None, page_size=10
     total_pages = 1
 
     while params["page"] <= total_pages:
-        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT)
+        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
 
         if response.status_code == 200:
             data = response.json()

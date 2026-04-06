@@ -29,7 +29,7 @@ def get_balances(as_of_date=None):
     if as_of_date:
         params["as_of_time"] = as_of_date
 
-    response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT)
+    response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
 
     if response.status_code == 200:
         return response.json().get("balances", [])
