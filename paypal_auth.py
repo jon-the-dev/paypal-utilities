@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from threading import Lock
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
@@ -25,6 +27,26 @@ else:
 _token_cache: dict = {"token": None, "expires_at": None, "lock": Lock()}
 
 _EXPIRY_BUFFER_SECONDS = 300  # 5-minute buffer before token expiry
+
+
+def create_session() -> requests.Session:
+    """Create a requests Session with retry logic for transient failures.
+
+    Retries up to 3 times with exponential backoff (1s, 2s, 4s) on
+    status codes 429, 500, 502, 503, and 504.
+    """
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST", "PATCH", "DELETE", "PUT"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 def clear_token_cache() -> None:
@@ -67,7 +89,8 @@ def get_paypal_token() -> str:
         validate_credentials()
         url = f"{PAYPAL_API_BASE}/v1/oauth2/token"
         headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-        response = requests.post(
+        session = create_session()
+        response = session.post(
             url,
             headers=headers,
             auth=(CLIENT_ID, PAYPAL_SECRET),

@@ -7,7 +7,9 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+import requests
 import responses
+from requests.adapters import HTTPAdapter
 
 from conftest import SANDBOX_API_BASE, TEST_ACCESS_TOKEN, TEST_CLIENT_ID, TEST_SECRET
 
@@ -255,3 +257,59 @@ class TestSSLVerification:
         assert len(responses.calls) == 1
         request = responses.calls[0].request
         assert request.req_kwargs.get("verify") is True
+
+
+class TestCreateSession:
+    """Tests for create_session function."""
+
+    def test_returns_session_with_retry_adapter(self):
+        """Session must mount an HTTPAdapter with correct retry configuration."""
+        from paypal_auth import create_session
+
+        session = create_session()
+
+        assert isinstance(session, requests.Session)
+
+        adapter = session.get_adapter("https://")
+        assert isinstance(adapter, HTTPAdapter)
+        assert adapter.max_retries.total == 3
+        assert adapter.max_retries.backoff_factor == 1
+        assert 429 in adapter.max_retries.status_forcelist
+        assert 500 in adapter.max_retries.status_forcelist
+        assert 502 in adapter.max_retries.status_forcelist
+        assert 503 in adapter.max_retries.status_forcelist
+        assert 504 in adapter.max_retries.status_forcelist
+
+    def test_http_adapter_also_mounted(self):
+        """The retry adapter must be mounted for plain http:// as well."""
+        from paypal_auth import create_session
+
+        session = create_session()
+
+        adapter = session.get_adapter("http://")
+        assert isinstance(adapter, HTTPAdapter)
+        assert adapter.max_retries.total == 3
+
+    def test_allowed_methods_include_all_http_verbs(self):
+        """Retry must cover all HTTP verbs used by the PayPal utilities."""
+        from paypal_auth import create_session
+
+        session = create_session()
+        adapter = session.get_adapter("https://")
+        allowed = adapter.max_retries.allowed_methods
+
+        for method in ["GET", "POST", "PATCH", "DELETE", "PUT"]:
+            assert method in allowed
+
+    @responses.activate
+    def test_session_makes_successful_request(self, mock_env_vars):
+        """Session returned by create_session must be able to issue live requests."""
+        from paypal_auth import create_session
+
+        responses.add(responses.GET, "https://example.com/test", json={"ok": True}, status=200)
+
+        session = create_session()
+        resp = session.get("https://example.com/test", timeout=5)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}

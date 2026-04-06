@@ -10,7 +10,9 @@ from datetime import datetime, timedelta
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
+
+_session = create_session()
 
 
 def get_transactions(start_date, end_date, transaction_status=None, page_size=100):
@@ -44,7 +46,7 @@ def get_transactions(start_date, end_date, transaction_status=None, page_size=10
     total_pages = 1
 
     while params["page"] <= total_pages:
-        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
         response.raise_for_status()
 
         data = response.json()

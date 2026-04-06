@@ -13,8 +13,9 @@ from pathlib import Path
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
 
+_session = create_session()
 
 # Valid product types
 PRODUCT_TYPES = ["PHYSICAL", "DIGITAL", "SERVICE"]
@@ -105,7 +106,7 @@ def create_product(name, description=None, product_type="SERVICE", category=None
     if home_url:
         payload["home_url"] = home_url
 
-    response = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
+    response = _session.post(url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return response.json()
 
@@ -127,7 +128,7 @@ def list_products(page_size=20):
     all_products = []
 
     while url:
-        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
         response.raise_for_status()
 
         data = response.json()
@@ -156,7 +157,7 @@ def get_product(product_id):
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
-    response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return response.json()
 
@@ -175,7 +176,7 @@ def update_product(product_id, updates):
     url = f"{PAYPAL_API_BASE}/v1/catalogs/products/{product_id}"
     headers = get_auth_headers()
 
-    response = requests.patch(url, headers=headers, json=updates, timeout=TIMEOUT, verify=True)
+    response = _session.patch(url, headers=headers, json=updates, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return True
 

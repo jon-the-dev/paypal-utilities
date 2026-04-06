@@ -9,8 +9,9 @@ from datetime import datetime, timedelta
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
 
+_session = create_session()
 
 # Dispute status codes
 DISPUTE_STATUSES = [
@@ -51,7 +52,7 @@ def get_disputes(start_date=None, dispute_state=None, page_size=20):
     all_disputes = []
 
     while url:
-        response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
         response.raise_for_status()
 
         data = response.json()
@@ -80,7 +81,7 @@ def get_dispute_details(dispute_id):
     url = f"{PAYPAL_API_BASE}/v1/customer/disputes/{dispute_id}"
     headers = get_auth_headers()
 
-    response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return response.json()
 

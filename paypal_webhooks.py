@@ -7,14 +7,16 @@ CLI utility for managing PayPal webhooks.
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
+
+_session = create_session()
 
 
 def list_webhooks():
     """List current PayPal webhooks."""
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks"
     headers = get_auth_headers()
-    response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
 
     webhooks = response.json().get("webhooks", [])
@@ -46,7 +48,7 @@ def create_webhook(url, event_types):
         "url": url,
         "event_types": [{"name": event_name} for event_name in event_types],
     }
-    response = requests.post(webhook_url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
+    response = _session.post(webhook_url, headers=headers, json=payload, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
 
     click.echo("Webhook created successfully.")
@@ -65,7 +67,7 @@ def delete_webhook(webhook_id):
     """
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks/{webhook_id}"
     headers = get_auth_headers()
-    response = requests.delete(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = _session.delete(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
 
     click.echo(f"Webhook {webhook_id} deleted successfully.")
@@ -76,7 +78,7 @@ def get_webhook_event_types():
     """List all available PayPal webhook event types."""
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks-event-types"
     headers = get_auth_headers()
-    response = requests.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
 
     event_types = response.json().get("event_types", [])
