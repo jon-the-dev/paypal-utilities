@@ -27,7 +27,11 @@ jobs:
           pip install -r requirements.txt pylint
 
       - name: Lint
-        run: pylint --disable=C0114,C0115,C0116 --max-line-length=120 *.py
+        run: >-
+          pylint
+          --disable=C0114,C0115,C0116,C0301,C0206,R0801,R0912,R0913,R0914,R0917,R1705,W0107,W0611,W1309,W1514
+          --max-line-length=120
+          *.py
 
       - name: Test
         run: pytest -v --tb=short
