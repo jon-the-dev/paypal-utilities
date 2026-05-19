@@ -1,5 +1,5 @@
 # Core dependencies
-click>=8.0.0
+click>=8.4.0
 requests>=2.33.1
 
 # Testing dependencies
