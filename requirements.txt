@@ -1,6 +1,6 @@
 # Core dependencies
 click>=8.4.0
-requests>=2.33.1
+requests>=2.34.2
 
 # Testing dependencies
 pytest>=9.0.3
