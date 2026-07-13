@@ -5,4 +5,4 @@ requests>=2.34.2
 # Testing dependencies
 pytest>=9.0.3
 pytest-cov>=7.1.0
-responses>=0.26.0
+responses>=0.26.2
