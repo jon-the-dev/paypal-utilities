@@ -74,15 +74,93 @@ def delete_webhook(webhook_id):
     return True
 
 
-def get_webhook_event_types():
-    """List all available PayPal webhook event types."""
+def get_webhook_event_catalog():
+    """Return PayPal's available webhook event names and descriptions."""
     url = f"{PAYPAL_API_BASE}/v1/notifications/webhooks-event-types"
     headers = get_auth_headers()
     response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
 
-    event_types = response.json().get("event_types", [])
-    return [et["name"] for et in event_types]
+    return response.json().get("event_types", [])
+
+
+def get_webhook_event_types():
+    """List all available PayPal webhook event type names."""
+    return [event_type["name"] for event_type in get_webhook_event_catalog()]
+
+
+def parse_event_selection(selection, event_types):
+    """Resolve a numbered interactive selection into webhook event names.
+
+    Selections may contain comma-separated numbers and inclusive ranges, such
+    as ``1,3-5``. ``all`` and ``*`` select every available event.
+    """
+    selection = selection.strip().lower()
+    if selection in {"all", "*"}:
+        return list(event_types)
+    if not selection:
+        raise ValueError("enter at least one event number")
+
+    selected_indexes = []
+    for part in selection.split(","):
+        part = part.strip()
+        if not part:
+            raise ValueError("separate event numbers with a single comma")
+
+        if "-" in part:
+            bounds = [value.strip() for value in part.split("-")]
+            if len(bounds) != 2 or not all(value.isdigit() for value in bounds):
+                raise ValueError(f"'{part}' is not a valid range")
+            start, end = (int(value) for value in bounds)
+            if start > end:
+                raise ValueError(f"range '{part}' must start with the lower number")
+            indexes = range(start, end + 1)
+        elif part.isdigit():
+            indexes = [int(part)]
+        else:
+            raise ValueError(f"'{part}' is not an event number")
+
+        for index in indexes:
+            if not 1 <= index <= len(event_types):
+                raise ValueError(
+                    f"event number {index} is outside 1-{len(event_types)}"
+                )
+            zero_based_index = index - 1
+            if zero_based_index not in selected_indexes:
+                selected_indexes.append(zero_based_index)
+
+    return [event_types[index] for index in selected_indexes]
+
+
+def select_webhook_event_types(event_catalog):
+    """Prompt the user to choose from the available webhook event types."""
+    click.echo("\nAvailable webhook event types:")
+    for index, event_type in enumerate(event_catalog, start=1):
+        click.echo(f"  {index:>3}. {event_type['name']}")
+        description = event_type.get("description")
+        if description:
+            click.echo(f"       {description}")
+
+    click.echo(
+        "\nSelect events by number. Use commas and ranges (for example, "
+        "1,3-5), or enter 'all'."
+    )
+    event_types = [event_type["name"] for event_type in event_catalog]
+    while True:
+        selection = click.prompt("Events")
+        try:
+            selected_events = parse_event_selection(selection, event_types)
+        except ValueError as exc:
+            click.echo(f"Invalid selection: {exc}.", err=True)
+            continue
+
+        click.echo("\nSelected webhook events:")
+        for event_type in selected_events:
+            click.echo(f"  - {event_type}")
+
+        if click.confirm("Use these events?", default=True):
+            return selected_events
+        click.echo("Choose the events again.")
 
 
 @click.group()
@@ -104,8 +182,20 @@ def cmd_list():
 @click.option("--url", "-u", required=True, help="Webhook endpoint URL")
 @click.option("--events", "-e", multiple=True, help="Event types to subscribe to (can specify multiple)")
 @click.option("--all-events", is_flag=True, help="Subscribe to all available event types")
-def cmd_create(url, events, all_events):
-    """Create a new webhook."""
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Choose event types from an interactive numbered list",
+)
+def cmd_create(url, events, all_events, interactive):
+    """Create a webhook, prompting for events when none are supplied."""
+    selection_modes = sum((bool(events), all_events, interactive))
+    if selection_modes > 1:
+        raise click.UsageError(
+            "Use only one of --events, --all-events, or --interactive."
+        )
+
     try:
         if all_events:
             event_types = get_webhook_event_types()
@@ -115,8 +205,11 @@ def cmd_create(url, events, all_events):
         elif events:
             event_types = list(events)
         else:
-            click.echo("Error: Specify --events or --all-events")
-            return
+            event_catalog = get_webhook_event_catalog()
+            if not event_catalog:
+                click.echo("Could not retrieve event types.")
+                return
+            event_types = select_webhook_event_types(event_catalog)
 
         create_webhook(url, event_types)
     except requests.exceptions.RequestException as exc:

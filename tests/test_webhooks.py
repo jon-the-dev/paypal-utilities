@@ -2,6 +2,8 @@
 Tests for paypal_webhooks module.
 """
 
+import json
+
 import pytest
 import requests
 import responses
@@ -197,6 +199,53 @@ class TestGetWebhookEventTypes:
         assert "PAYMENT.SALE.COMPLETED" in event_types
 
 
+class TestParseEventSelection:
+    """Tests for interactive webhook event selection parsing."""
+
+    event_types = [
+        "PAYMENT.SALE.COMPLETED",
+        "PAYMENT.SALE.REFUNDED",
+        "BILLING.SUBSCRIPTION.CREATED",
+        "CUSTOMER.DISPUTE.CREATED",
+        "CUSTOMER.DISPUTE.RESOLVED",
+    ]
+
+    def test_parses_numbers_ranges_and_removes_duplicates(self):
+        """Resolve mixed selections in the order entered."""
+        from paypal_webhooks import parse_event_selection
+
+        result = parse_event_selection("3,1-2,3", self.event_types)
+
+        assert result == [
+            "BILLING.SUBSCRIPTION.CREATED",
+            "PAYMENT.SALE.COMPLETED",
+            "PAYMENT.SALE.REFUNDED",
+        ]
+
+    @pytest.mark.parametrize("selection", ["all", "*"])
+    def test_selects_all_events(self, selection):
+        """Support convenient aliases for selecting every event."""
+        from paypal_webhooks import parse_event_selection
+
+        assert parse_event_selection(selection, self.event_types) == self.event_types
+
+    @pytest.mark.parametrize(
+        ("selection", "message"),
+        [
+            ("", "enter at least one"),
+            ("two", "not an event number"),
+            ("4-2", "must start with the lower number"),
+            ("1,6", "outside 1-5"),
+        ],
+    )
+    def test_rejects_invalid_selections(self, selection, message):
+        """Explain invalid input so interactive users can correct it."""
+        from paypal_webhooks import parse_event_selection
+
+        with pytest.raises(ValueError, match=message):
+            parse_event_selection(selection, self.event_types)
+
+
 class TestWebhooksCLI:
     """Tests for webhook CLI commands."""
 
@@ -231,6 +280,128 @@ class TestWebhooksCLI:
         result = cli_runner.invoke(cli, ["events"])
         assert result.exit_code == 0
         assert "PAYMENT.SALE.COMPLETED" in result.output
+
+    @responses.activate
+    def test_cli_create_prompts_for_event_selection(
+        self, mock_env_vars, mock_auth, cli_runner
+    ):
+        """Create a webhook from numbered and ranged interactive choices."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks-event-types",
+            json=SAMPLE_WEBHOOK_EVENT_TYPES,
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
+            json=SAMPLE_WEBHOOK,
+            status=201,
+        )
+
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(
+            cli,
+            ["create", "--url", "https://example.com/webhook"],
+            input="1,3\ny\n",
+        )
+
+        assert result.exit_code == 0
+        assert "1. PAYMENT.SALE.COMPLETED" in result.output
+        assert "A sale completes" in result.output
+        assert "3. BILLING.SUBSCRIPTION.CREATED" in result.output
+        assert "Webhook created successfully." in result.output
+        request_body = json.loads(responses.calls[-1].request.body)
+        assert request_body["event_types"] == [
+            {"name": "PAYMENT.SALE.COMPLETED"},
+            {"name": "BILLING.SUBSCRIPTION.CREATED"},
+        ]
+
+    @responses.activate
+    def test_cli_create_accepts_repeated_event_options(
+        self, mock_env_vars, mock_auth, cli_runner
+    ):
+        """Preserve the non-interactive repeated -e workflow."""
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
+            json=SAMPLE_WEBHOOK,
+            status=201,
+        )
+
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "create",
+                "--url",
+                "https://example.com/webhook",
+                "-e",
+                "PAYMENT.SALE.COMPLETED",
+                "-e",
+                "PAYMENT.SALE.REFUNDED",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Webhook created successfully." in result.output
+        request_body = json.loads(responses.calls[-1].request.body)
+        assert request_body["event_types"] == [
+            {"name": "PAYMENT.SALE.COMPLETED"},
+            {"name": "PAYMENT.SALE.REFUNDED"},
+        ]
+
+    @responses.activate
+    def test_cli_create_reprompts_after_invalid_selection(
+        self, mock_env_vars, mock_auth, cli_runner
+    ):
+        """Keep prompting until the user supplies a valid selection."""
+        responses.add(
+            responses.GET,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks-event-types",
+            json=SAMPLE_WEBHOOK_EVENT_TYPES,
+            status=200,
+        )
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/notifications/webhooks",
+            json=SAMPLE_WEBHOOK,
+            status=201,
+        )
+
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(
+            cli,
+            ["create", "--url", "https://example.com/webhook", "--interactive"],
+            input="99\n2\ny\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Invalid selection: event number 99 is outside 1-3." in result.output
+        assert "PAYMENT.SALE.REFUNDED" in result.output
+        assert "Webhook created successfully." in result.output
+
+    def test_cli_create_rejects_conflicting_selection_modes(self, cli_runner):
+        """Keep scripted and interactive selection modes unambiguous."""
+        from paypal_webhooks import cli
+
+        result = cli_runner.invoke(
+            cli,
+            [
+                "create",
+                "--url",
+                "https://example.com/webhook",
+                "--events",
+                "PAYMENT.SALE.COMPLETED",
+                "--interactive",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "Use only one of --events, --all-events, or --interactive." in result.output
 
     @responses.activate
     def test_cli_list_error_shows_error_output(self, mock_env_vars, mock_auth, cli_runner):
