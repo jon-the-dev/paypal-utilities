@@ -1,5 +1,7 @@
 # paypal-utilities
 
+![Illustration of a command-line terminal connected to product, webhook, transaction, balance, and dispute utilities](docs/assets/paypal-utilities-hero.webp)
+
 A collection of CLI tools for PayPal merchants to manage products, webhooks, transactions, balances, and disputes.
 
 ## Installation
