@@ -259,14 +259,14 @@ class TestSSLVerification:
         assert request.req_kwargs.get("verify") is True
 
 
-class TestCreateSession:
-    """Tests for create_session function."""
+class TestGetSession:
+    """Tests for get_session function."""
 
     def test_returns_session_with_retry_adapter(self):
         """Session must mount an HTTPAdapter with correct retry configuration."""
-        from paypal_auth import create_session
+        from paypal_auth import get_session
 
-        session = create_session()
+        session = get_session()
 
         assert isinstance(session, requests.Session)
 
@@ -282,9 +282,9 @@ class TestCreateSession:
 
     def test_http_adapter_also_mounted(self):
         """The retry adapter must be mounted for plain http:// as well."""
-        from paypal_auth import create_session
+        from paypal_auth import get_session
 
-        session = create_session()
+        session = get_session()
 
         adapter = session.get_adapter("http://")
         assert isinstance(adapter, HTTPAdapter)
@@ -292,9 +292,9 @@ class TestCreateSession:
 
     def test_allowed_methods_include_all_http_verbs(self):
         """Retry must cover all HTTP verbs used by the PayPal utilities."""
-        from paypal_auth import create_session
+        from paypal_auth import get_session
 
-        session = create_session()
+        session = get_session()
         adapter = session.get_adapter("https://")
         allowed = adapter.max_retries.allowed_methods
 
@@ -303,13 +303,109 @@ class TestCreateSession:
 
     @responses.activate
     def test_session_makes_successful_request(self, mock_env_vars):
-        """Session returned by create_session must be able to issue live requests."""
-        from paypal_auth import create_session
+        """Session returned by get_session must be able to issue live requests."""
+        from paypal_auth import get_session
 
         responses.add(responses.GET, "https://example.com/test", json={"ok": True}, status=200)
 
-        session = create_session()
+        session = get_session()
         resp = session.get("https://example.com/test", timeout=5)
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
+
+
+class TestConnectionPooling:
+    """Tests for shared session reuse and connection pool configuration."""
+
+    def test_session_is_reused_across_calls(self, mock_env_vars):
+        """Repeated calls must return the same session so connections are pooled."""
+        from paypal_auth import get_session
+
+        assert get_session() is get_session()
+
+    def test_adapter_uses_configured_pool_sizes(self, mock_env_vars):
+        """The mounted adapter must apply the configured pool sizing."""
+        import paypal_auth
+
+        adapter = paypal_auth.get_session().get_adapter("https://")
+
+        assert adapter._pool_connections == paypal_auth.POOL_CONNECTIONS
+        assert adapter._pool_maxsize == paypal_auth.POOL_MAXSIZE
+
+    def test_default_pool_sizes(self, mock_env_vars):
+        """Pool sizing defaults to 10 connection pools of up to 20 connections."""
+        from paypal_auth import POOL_CONNECTIONS, POOL_MAXSIZE
+
+        assert POOL_CONNECTIONS == 10
+        assert POOL_MAXSIZE == 20
+
+    def test_pool_sizes_from_env(self):
+        """Pool sizing must be tunable via environment variables."""
+        with patch.dict(os.environ, {
+            "PAYPAL_CLIENT_ID": TEST_CLIENT_ID,
+            "PAYPAL_SECRET": TEST_SECRET,
+            "ENVIRONMENT": "dev",
+            "PAYPAL_POOL_CONNECTIONS": "3",
+            "PAYPAL_POOL_MAXSIZE": "7",
+        }):
+            import importlib
+            import paypal_auth
+
+            importlib.reload(paypal_auth)
+
+            assert paypal_auth.POOL_CONNECTIONS == 3
+            assert paypal_auth.POOL_MAXSIZE == 7
+
+            adapter = paypal_auth.get_session().get_adapter("https://")
+            assert adapter._pool_connections == 3
+            assert adapter._pool_maxsize == 7
+
+    def test_clear_session_forces_a_new_session(self, mock_env_vars):
+        """clear_session() must discard the cached session."""
+        import paypal_auth
+
+        first = paypal_auth.get_session()
+        paypal_auth.clear_session()
+        second = paypal_auth.get_session()
+
+        assert first is not second
+
+    @responses.activate
+    def test_token_requests_reuse_the_shared_session(self, mock_env_vars):
+        """Token fetches must go through the shared session, not a fresh one."""
+        import paypal_auth
+
+        responses.add(
+            responses.POST,
+            f"{SANDBOX_API_BASE}/v1/oauth2/token",
+            json={"access_token": TEST_ACCESS_TOKEN, "expires_in": 32400},
+            status=200,
+        )
+
+        session_before = paypal_auth.get_session()
+        paypal_auth.get_paypal_token()
+
+        assert paypal_auth.get_session() is session_before
+
+    @responses.activate
+    def test_concurrent_requests_share_one_session(self, mock_env_vars):
+        """Threads must all receive the same pooled session."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        import paypal_auth
+
+        paypal_auth.clear_session()
+
+        responses.add(responses.GET, "https://example.com/pooled", json={"ok": True}, status=200)
+
+        def fetch(_):
+            session = paypal_auth.get_session()
+            session.get("https://example.com/pooled", timeout=5)
+            return session
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            sessions = list(executor.map(fetch, range(20)))
+
+        assert len(set(id(s) for s in sessions)) == 1
+        assert len(responses.calls) == 20

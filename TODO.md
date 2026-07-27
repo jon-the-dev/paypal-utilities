@@ -1,5 +1,10 @@
 # TODO
 
+## Sprint 2026-07-27 (batch 3)
+
+- [x] #8 — [MEDIUM] Refactor duplicate date parsing logic
+- [x] #9 — [MEDIUM] Implement connection pooling for improved performance
+
 ## Sprint 2026-04-05 (batch 2)
 
 - [x] #5 — [HIGH] Standardize error handling across all API calls (PR #13 — merged)

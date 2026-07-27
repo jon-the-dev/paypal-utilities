@@ -4,14 +4,11 @@ PayPal Dispute Management
 CLI utility for viewing and tracking PayPal disputes and chargebacks.
 """
 
-from datetime import datetime, timedelta
-
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
-
-_session = create_session()
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers, get_session
+from paypal_utils import parse_date_range
 
 # Dispute status codes
 DISPUTE_STATUSES = [
@@ -52,7 +49,7 @@ def get_disputes(start_date=None, dispute_state=None, page_size=20):
     all_disputes = []
 
     while url:
-        response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response = get_session().get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
         response.raise_for_status()
 
         data = response.json()
@@ -81,7 +78,7 @@ def get_dispute_details(dispute_id):
     url = f"{PAYPAL_API_BASE}/v1/customer/disputes/{dispute_id}"
     headers = get_auth_headers()
 
-    response = _session.get(url, headers=headers, timeout=TIMEOUT, verify=True)
+    response = get_session().get(url, headers=headers, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return response.json()
 
@@ -111,7 +108,7 @@ def cli():
 @click.option("--limit", "-l", type=int, default=20, help="Max disputes to display (default: 20)")
 def cmd_list(status, days, limit):
     """List disputes."""
-    start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    start_date, _ = parse_date_range(days=days)
 
     click.echo(f"Fetching disputes from the last {days} days...")
 
@@ -192,7 +189,7 @@ def cmd_show(dispute_id):
 @click.option("--days", "-d", type=int, default=90, help="Number of days to look back (default: 90)")
 def cmd_summary(days):
     """Show dispute summary."""
-    start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    start_date, _ = parse_date_range(days=days)
 
     try:
         disputes = get_disputes(start_date)

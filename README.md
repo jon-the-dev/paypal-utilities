@@ -15,6 +15,9 @@ pip install -r requirements.txt
 | `PAYPAL_CLIENT_ID` | Yes | Your PayPal application client ID |
 | `PAYPAL_SECRET` | Yes | Your PayPal application secret |
 | `ENVIRONMENT` | No | Set to `prod` for production API (defaults to `dev`/sandbox) |
+| `PAYPAL_TIMEOUT` | No | Per-request timeout in seconds (default: `30`) |
+| `PAYPAL_POOL_CONNECTIONS` | No | Number of connection pools to cache (default: `10`) |
+| `PAYPAL_POOL_MAXSIZE` | No | Max pooled connections per host (default: `20`) |
 
 ```bash
 export PAYPAL_CLIENT_ID="your_client_id"
@@ -231,7 +234,8 @@ Tests use the `responses` library to mock PayPal API calls, allowing validation 
 
 ```text
 paypal-utilities/
-├── paypal_auth.py          # Shared OAuth authentication
+├── paypal_auth.py          # Shared OAuth authentication & pooled HTTP session
+├── paypal_utils.py         # Shared helpers (date range parsing)
 ├── paypal_products.py      # Product catalog management
 ├── paypal_webhooks.py      # Webhook management
 ├── paypal_transactions.py  # Transaction history & export
@@ -246,6 +250,7 @@ paypal-utilities/
 │   ├── test_disputes.py
 │   ├── test_products.py
 │   ├── test_transactions.py
+│   ├── test_utils.py
 │   └── test_webhooks.py
 └── README.md
 ```

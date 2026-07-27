@@ -18,6 +18,8 @@ CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
 PAYPAL_SECRET = os.getenv("PAYPAL_SECRET")
 ENV = os.getenv("ENVIRONMENT", "dev")
 TIMEOUT = int(os.getenv("PAYPAL_TIMEOUT", "30"))
+POOL_CONNECTIONS = int(os.getenv("PAYPAL_POOL_CONNECTIONS", "10"))
+POOL_MAXSIZE = int(os.getenv("PAYPAL_POOL_MAXSIZE", "20"))
 
 if ENV == "prod":
     PAYPAL_API_BASE = "https://api.paypal.com"
@@ -26,27 +28,50 @@ else:
 
 _token_cache: dict = {"token": None, "expires_at": None, "lock": Lock()}
 
+_session_cache: dict = {"session": None, "lock": Lock()}
+
 _EXPIRY_BUFFER_SECONDS = 300  # 5-minute buffer before token expiry
 
 
-def create_session() -> requests.Session:
-    """Create a requests Session with retry logic for transient failures.
+def get_session() -> requests.Session:
+    """Return the shared requests Session, creating it on first use.
 
-    Retries up to 3 times with exponential backoff (1s, 2s, 4s) on
-    status codes 429, 500, 502, 503, and 504.
+    Every PayPal API call goes through this one session so that TCP and TLS
+    connections are pooled and reused instead of being renegotiated per
+    request. Pool sizing is tunable via the PAYPAL_POOL_CONNECTIONS and
+    PAYPAL_POOL_MAXSIZE environment variables.
+
+    Transient failures are retried up to 3 times with exponential backoff
+    (1s, 2s, 4s) on status codes 429, 500, 502, 503, and 504.
     """
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "POST", "PATCH", "DELETE", "PUT"],
-        raise_on_status=False,
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
+    with _session_cache["lock"]:
+        if _session_cache["session"] is None:
+            session = requests.Session()
+            retry = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["GET", "POST", "PATCH", "DELETE", "PUT"],
+                raise_on_status=False,
+            )
+            adapter = HTTPAdapter(
+                pool_connections=POOL_CONNECTIONS,
+                pool_maxsize=POOL_MAXSIZE,
+                max_retries=retry,
+            )
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            _session_cache["session"] = session
+
+        return _session_cache["session"]
+
+
+def clear_session() -> None:
+    """Close and discard the shared session. Used in tests for clean state."""
+    with _session_cache["lock"]:
+        if _session_cache["session"] is not None:
+            _session_cache["session"].close()
+            _session_cache["session"] = None
 
 
 def clear_token_cache() -> None:
@@ -89,8 +114,7 @@ def get_paypal_token() -> str:
         validate_credentials()
         url = f"{PAYPAL_API_BASE}/v1/oauth2/token"
         headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-        session = create_session()
-        response = session.post(
+        response = get_session().post(
             url,
             headers=headers,
             auth=(CLIENT_ID, PAYPAL_SECRET),
