@@ -5,14 +5,12 @@ CLI utility for downloading and viewing PayPal transaction history.
 """
 
 import csv
-from datetime import datetime, timedelta
 
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
-
-_session = create_session()
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers, get_session
+from paypal_utils import parse_date_range
 
 
 def get_transactions(start_date, end_date, transaction_status=None, page_size=100):
@@ -46,7 +44,7 @@ def get_transactions(start_date, end_date, transaction_status=None, page_size=10
     total_pages = 1
 
     while params["page"] <= total_pages:
-        response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+        response = get_session().get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
         response.raise_for_status()
 
         data = response.json()
@@ -106,18 +104,7 @@ def cli():
 @click.option("--limit", "-l", type=int, default=20, help="Max transactions to display (default: 20)")
 def cmd_list(start, end, days, status, limit):
     """List recent transactions."""
-    if end:
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-    else:
-        end_date = datetime.utcnow()
-
-    if start:
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-    else:
-        start_date = end_date - timedelta(days=days)
-
-    start_str = start_date.strftime("%Y-%m-%dT00:00:00Z")
-    end_str = end_date.strftime("%Y-%m-%dT23:59:59Z")
+    start_str, end_str = parse_date_range(start, end, days)
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 
@@ -149,18 +136,7 @@ def cmd_list(start, end, days, status, limit):
 @click.option("--output", "-o", default="transactions.csv", help="Output filename (default: transactions.csv)")
 def cmd_export(start, end, days, status, output):
     """Export transactions to CSV."""
-    if end:
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-    else:
-        end_date = datetime.utcnow()
-
-    if start:
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-    else:
-        start_date = end_date - timedelta(days=days)
-
-    start_str = start_date.strftime("%Y-%m-%dT00:00:00Z")
-    end_str = end_date.strftime("%Y-%m-%dT23:59:59Z")
+    start_str, end_str = parse_date_range(start, end, days)
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 
@@ -179,18 +155,7 @@ def cmd_export(start, end, days, status, output):
 @click.option("--days", "-d", type=int, default=30, help="Number of days to look back (default: 30)")
 def cmd_summary(start, end, days):
     """Show transaction summary with totals."""
-    if end:
-        end_date = datetime.strptime(end, "%Y-%m-%d")
-    else:
-        end_date = datetime.utcnow()
-
-    if start:
-        start_date = datetime.strptime(start, "%Y-%m-%d")
-    else:
-        start_date = end_date - timedelta(days=days)
-
-    start_str = start_date.strftime("%Y-%m-%dT00:00:00Z")
-    end_str = end_date.strftime("%Y-%m-%dT23:59:59Z")
+    start_str, end_str = parse_date_range(start, end, days)
 
     click.echo(f"Fetching transactions from {start_str[:10]} to {end_str[:10]}...")
 

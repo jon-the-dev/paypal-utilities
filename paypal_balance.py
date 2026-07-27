@@ -9,9 +9,7 @@ from datetime import datetime
 import click
 import requests
 
-from paypal_auth import PAYPAL_API_BASE, TIMEOUT, create_session, get_auth_headers
-
-_session = create_session()
+from paypal_auth import PAYPAL_API_BASE, TIMEOUT, get_auth_headers, get_session
 
 
 def get_balances(as_of_date=None):
@@ -31,7 +29,7 @@ def get_balances(as_of_date=None):
     if as_of_date:
         params["as_of_time"] = as_of_date
 
-    response = _session.get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
+    response = get_session().get(url, headers=headers, params=params, timeout=TIMEOUT, verify=True)
     response.raise_for_status()
     return response.json().get("balances", [])
 
