@@ -43,7 +43,10 @@ Manage PayPal webhook subscriptions.
 # List all configured webhooks
 python paypal_webhooks.py list
 
-# Create a webhook with specific events
+# Create interactively and choose from PayPal's current event types
+python paypal_webhooks.py create --url https://example.com/webhook
+
+# Create non-interactively with specific events
 python paypal_webhooks.py create --url https://example.com/webhook \
   -e PAYMENT.SALE.COMPLETED \
   -e PAYMENT.SALE.REFUNDED
@@ -57,6 +60,10 @@ python paypal_webhooks.py delete WEBHOOK_ID
 # List available event types
 python paypal_webhooks.py events
 ```
+
+Interactive creation displays a numbered event list fetched from PayPal. Select
+individual events, comma-separated choices, or inclusive ranges such as
+`1,3-5`; enter `all` to subscribe to every displayed event.
 
 ---
 
